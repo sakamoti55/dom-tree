@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>サイトのDOM構造可視化ツール</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+      }
+      .node circle {
+        fill: #999;
+      }
+      .node text {
+        font: 12px sans-serif;
+      }
+      .link {
+        fill: none;
+        stroke: #555;
+        stroke-opacity: 0.4;
+        stroke-width: 1.5px;
+      }
+      #tree-container {
+        border: 1px solid #ccc;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>サイトのDOM構造可視化ツール</h1>
+    <p>表示したいサイトのURLを入力してください（例：https://example.com）:</p>
+    <form id="urlForm">
+      <input type="text" id="urlInput" placeholder="サイトのURL" size="50" />
+      <button type="submit">表示</button>
+    </form>
+    <div id="tree-container">
+      <svg width="1000" height="800"></svg>
+    </div>
+
+    <script>
+      // HTML文字列からDocumentオブジェクトを生成する
+      function parseHTML(htmlString) {
+        const parser = new DOMParser();
+        return parser.parseFromString(htmlString, "text/html");
+      }
+
+      // DOMツリーを再帰的にJSONに変換する関数
+      function domToTree(node) {
+        return {
+          name: node.nodeName.toLowerCase(),
+          children: Array.from(node.children).map(domToTree),
+        };
+      }
+
+      // D3.jsを用いてツリーを描画する関数
+      function drawTree(treeData) {
+        // 以前のSVG要素をクリア
+        const svg = d3.select("svg");
+        svg.selectAll("*").remove();
+
+        const width = +svg.attr("width");
+        const height = +svg.attr("height");
+
+        // d3.hierarchyで階層データへ変換
+        const root = d3.hierarchy(treeData);
+        const treeLayout = d3.tree().size([height - 100, width - 200]);
+        treeLayout(root);
+
+        // リンク（枝）を描画
+        svg
+          .selectAll(".link")
+          .data(root.links())
+          .join("path")
+          .attr("class", "link")
+          .attr(
+            "d",
+            d3
+              .linkHorizontal()
+              .x((d) => d.y + 100)
+              .y((d) => d.x + 50)
+          );
+
+        // ノードを描画
+        const node = svg
+          .selectAll(".node")
+          .data(root.descendants())
+          .join("g")
+          .attr("class", "node")
+          .attr("transform", (d) => `translate(${d.y + 100},${d.x + 50})`);
+
+        node.append("circle").attr("r", 4);
+
+        node
+          .append("text")
+          .attr("dy", 3)
+          .attr("x", (d) => (d.children ? -8 : 8))
+          .style("text-anchor", (d) => (d.children ? "end" : "start"))
+          .text((d) => d.data.name);
+      }
+
+      // フォーム送信時のイベントハンドラ
+      document
+        .getElementById("urlForm")
+        .addEventListener("submit", async function (event) {
+          event.preventDefault();
+          const url = document.getElementById("urlInput").value;
+          if (!url) {
+            alert("URLを入力してください");
+            return;
+          }
+          try {
+            // サーバーの /fetch エンドポイントから対象サイトのHTML取得
+            const response = await fetch(
+              `/fetch?url=${encodeURIComponent(url)}`
+            );
+            if (!response.ok) {
+              alert("サイトの取得に失敗しました");
+              return;
+            }
+            const data = await response.json();
+            // 取得したHTMLをパース
+            const fetchedDoc = parseHTML(data.html);
+            // body要素のDOM構造をツリー形式で取得
+            const treeData = domToTree(fetchedDoc.body);
+            // ツリー描画
+            drawTree(treeData);
+          } catch (error) {
+            console.error(error);
+            alert("エラーが発生しました");
+          }
+        });
+    </script>
+  </body>
+</html>
